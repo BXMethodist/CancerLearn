@@ -10,7 +10,7 @@ from scipy import interp
 from sklearn import preprocessing
 from sklearn.metrics import accuracy_score
 
-def ROC_plot(model, X, y, fname, classes=[0,1,2], test_size=.1, iterations=100, verbose=False):
+def ROC_plot(model, X, y, fname, classes=[0,1,2], test_size=.4, iterations=100, verbose=False):
     # Import some data to play with
     # Binarize the output
     y = label_binarize(y, classes=classes)
@@ -59,23 +59,25 @@ def ROC_plot(model, X, y, fname, classes=[0,1,2], test_size=.1, iterations=100, 
     tpr["macro"] = mean_tpr
     roc_auc["macro"] = auc(fpr["macro"], tpr["macro"])
     labels = ['Control', 'TSG', 'OG']
-    colors = cycle(['black', 'darkorange', 'green', 'aqua', 'cornflowerblue', 'purple'])
+    colors = cycle(['black', 'blue', 'red', 'darkorange', 'green', 'aqua', 'cornflowerblue', 'purple'])
     for i, color in zip(range(n_classes), colors):
         if i == 0:
             continue
+        # plt.plot(mean_fpr, tpr[i] / iterations, color=color)
         plt.plot(mean_fpr, tpr[i]/iterations, color=color,
                  label='ROC curve of group {0} (area = {1:0.2f})'
                  ''.format(str(labels[i]), roc_auc[i]/iterations))
         pass
-    plt.plot(mean_fpr, tpr['macro'] / iterations, color='red',
-             label='ROC curve of {0} (area = {1:0.2f})'
-                   ''.format('full model', roc_auc['macro']/iterations))
+    # plt.plot(mean_fpr, tpr['macro'] / iterations, color='red',
+    #          label='ROC curve of {0} (area = {1:0.2f})'
+    #                ''.format('full model', roc_auc['macro']/iterations))
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
     plt.legend(loc="lower right")
     plt.savefig('../plots/'+fname, transparent=True)
+    plt.close('all')
 
 
 

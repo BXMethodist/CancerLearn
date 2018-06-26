@@ -14,7 +14,8 @@ if __name__ == "__main__":
     Generate tables for STD, CV, TAU, MIN, MAX, MEAN for each epigenetic feature from different cell types.
     """
     if False:
-        real_tables = [x for x in os.listdir('../real_tables') if x.endswith('_real_table.csv')]
+        path = '../real_tables/5/'
+        real_tables = [x for x in os.listdir(path) if x.endswith('_real_table.csv')]
 
         # candidates_celltypes = ['HUVEC', 'HMEC', 'HSMM', 'NHLF']
 
@@ -22,10 +23,10 @@ if __name__ == "__main__":
         for table in real_tables:
             # if table.split('_')[0] not in candidates_celltypes:
             #     continue
-            df = pd.read_csv('../real_tables/'+table, index_col=0)
+            df = pd.read_csv(path+table, index_col=0)
             for c in df.columns:
-                if c.find('H3K9me3')!=-1:
-                    continue
+                # if c.find('H3K9me3')!=-1:
+                #     continue
                 features[c] = pd.DataFrame(index=df.index)
             break
         for feature in features.keys():
@@ -33,10 +34,11 @@ if __name__ == "__main__":
                 continue
             cur_df = features[feature]
             for table in real_tables:
+                print table
                 # if table.split('_')[0] not in candidates_celltypes:
                 #     continue
                 celltype = table.replace('_parameters_default_real_table.csv', '')
-                cur_table = pd.read_csv('../real_tables/' + table, index_col=0)
+                cur_table = pd.read_csv(path + table, index_col=0)
                 cur_df[celltype+'_'+feature] = cur_table[feature]
 
             # cur_df = quantileNormalize(cur_df)
@@ -62,7 +64,7 @@ if __name__ == "__main__":
         cancer_df = cancer_df[(cancer_df['label']==1)|(cancer_df['label']==2)]
 
 
-        all_genes = pd.read_csv('../real_tables/CD4_parameters_default_real_table.csv', index_col=0)
+        all_genes = pd.read_csv('../real_tables/5/CD4_parameters_default_real_table.csv', index_col=0)
         all_genes = all_genes[~all_genes.index.isin(cancer_df)]
         controls = all_genes.sample(150, random_state=100)
 
@@ -143,9 +145,9 @@ if __name__ == "__main__":
         from CancerROC import ROC_plot
         from sklearn.linear_model import LogisticRegression
 
-        estimator = LogisticRegression(penalty='l1', C=.1)
+        # estimator = LogisticRegression(penalty='l1', C=.1)
         # estimator = svm.SVC(probability=True)
-        # estimator = RandomForestClassifier(n_estimators=10)
+        estimator = RandomForestClassifier(n_estimators=10)
         model = OneVsRestClassifier(estimator)
 
         ROC_plot(model, train_df.iloc[:, :-1], train_df.iloc[:, -1], classes=[0, 1, 2], fname='wo_smote_ROC.pdf')
@@ -316,7 +318,7 @@ if __name__ == "__main__":
             columns = ['tau', 'std', 'mean', 'cv', 'max', 'min', ]
             for c in columns:
                 training_df[feature + '_' + c] = cur_df[c]
-        training_df.to_excel('../results/aggregated_real.xlsx')
+        training_df.to_excel('../results/aggregated_real_5.xlsx')
 
 
     """
@@ -326,11 +328,11 @@ if __name__ == "__main__":
         cancer_df = pd.read_excel('../genelist/TUSON_cancer_genes_curated.xlsx', index_col=0)
         cancer_df = cancer_df[(cancer_df['label'] == 1) | (cancer_df['label'] == 2)]
 
-        real_table = pd.read_excel('../results/aggregated_real.xlsx', index_col=0)
+        real_table = pd.read_excel('../results/aggregated_real_5.xlsx', index_col=0)
         real_table = real_table.fillna(0)
 
         for i in range(0, 10000, 100):
-            all_genes = pd.read_csv('../real_tables/CD4_parameters_default_real_table.csv', index_col=0)
+            all_genes = pd.read_csv('../real_tables/5/CD4_parameters_default_real_table.csv', index_col=0)
             all_genes = all_genes[~all_genes.index.isin(cancer_df)]
             controls = all_genes.sample(150, random_state=i)
 
@@ -355,13 +357,13 @@ if __name__ == "__main__":
             smote_df = pd.DataFrame(X_resampled)
             smote_df.columns = cur_table.columns[:-1]
             smote_df['label'] = Y_resampled
-            smote_df.to_excel('../results/aggregated_training_smote'+str(i)+'.xlsx')
+            smote_df.to_excel('../results/aggregated_training_5_smote'+str(i)+'.xlsx')
 
     """
         Do the prediction
     """
-    if True:
-        real_table = pd.read_excel('../results/aggregated_real.xlsx', index_col=0)
+    if False:
+        real_table = pd.read_excel('../results/aggregated_real_5.xlsx', index_col=0)
         real_table = real_table.fillna(0)
         great_table = pd.read_csv('../ref_data/hg19.GREATgene2UCSCknownGenes.table.xls', sep='\t',
                                   dtype={"hg19.kgXref.geneSymbol": str})
@@ -369,10 +371,22 @@ if __name__ == "__main__":
         real_table = real_table[real_table.index.isin(great_table.index)]
 
         # y_score = 0
-        y_prob = 0
+        og_y_prob = pd.DataFrame(index=real_table.index)
+        tsg_y_prob = pd.DataFrame(index=real_table.index)
 
-        for i in range(0, 10000, 100):
-            smote_df = pd.read_excel('../results/aggregated_training_smote'+str(i)+'.xlsx', index_col=0)
+        times = range(0, 10000, 100)
+
+        for i in times:
+            smote_df = pd.read_excel('../results/aggregated_training_5_smote'+str(i)+'.xlsx', index_col=0)
+
+            ###
+            # smote_df = pd.read_excel('../results/aggregated_training.xlsx', index_col=0)
+            # smote_df = smote_df.fillna(0)
+            # cancer_df = pd.read_excel('../genelist/TUSON_cancer_genes_curated.xlsx', index_col=0)
+            # smote_df = label_label(smote_df, cancer_df)
+            ###
+
+
             scaler = center_normalization(smote_df.iloc[:, :-1])
             smote_df.iloc[:, :-1] = preprocessing_table(scaler, smote_df.iloc[:, :-1])
 
@@ -389,20 +403,69 @@ if __name__ == "__main__":
             cur_real_table = preprocessing_table(scaler, real_table)
 
             # y_score += predictor.decision_function(cur_real_table)
-            y_prob += predictor.predict_proba(cur_real_table)
+            y_score = predictor.predict_proba(cur_real_table)
+            og_y_prob['predict'+str(i)] = y_score[:, 2]
+            tsg_y_prob['predict' + str(i)] = y_score[:, 1]
 
-        # y_score /= 100
-        y_prob /= 100
-        df = pd.DataFrame(index=real_table.index)
-        types = ['Control', 'TSG', 'OG']
+        og_y_prob.to_excel('OG_aggregate_5_vote100.xlsx')
+        tsg_y_prob.to_excel('TSG_aggregate_5_vote100.xlsx')
 
-        # for i in range(len(types)):
-        #     c = types[i]+'_distance'
-        #     df[c] = y_score[:, i]
-        for i in range(len(types)):
-            c = types[i]+'_prob'
-            df[c] = y_prob[:, i]
-        df.to_excel('../results/aggregated_real_results.xlsx')
+    """
+    check the cutoff of the probablility
+    """
+    if False:
+        og_df = pd.read_excel('../results/OG_aggregate_5_vote100.xlsx', index_col=0)
+        tsg_df = pd.read_excel('../results/TSG_aggregate_5_vote100.xlsx', index_col=0)
+
+        control_df = 1 - og_df - tsg_df
+
+        result_df=pd.DataFrame(index=og_df.index)
+        result_df['TSG_prob'] = tsg_df.mean(axis=1)
+        result_df['OG_prob'] = og_df.mean(axis=1)
+        result_df['Control_prob'] = control_df.mean(axis=1)
+
+        # for index in og_df.index:
+        #     for c in og_df.columns:
+        #         og_p, tsg_p, c_p = og_df.ix[index, c], tsg_df.ix[index, c], control_df.ix[index, c]
+        #         if og_p > tsg_p and og_p > c_p:
+        #             result_df.ix[index, 'OG_prob'] += 1
+        #         elif og_p < tsg_p and tsg_p > c_p:
+        #             result_df.ix[index, 'TSG_prob'] += 1
+        #
+        # result_df = result_df/100.
+        result_df.to_excel('aggregate_5_vote100.xlsx')
+
+
+    """
+        check the prediction result, with SMOTE, For each biological markers
+    """
+    if True:
+        markers = ['H3K4me3', 'H3K4me1', 'H3K27me3', 'H3K27ac', 'H3K79me2', 'H3K9me3',
+                   'CTCF']
+
+        train_df = pd.read_excel('../results/aggregated_training.xlsx', index_col=0)
+        train_df = train_df.fillna(0)
+        cancer_df = pd.read_excel('../genelist/TUSON_cancer_genes_curated.xlsx', index_col=0)
+        # cancer_df = pd.read_excel('../genelist/TUSON_top100.xlsx', index_col=0)
+        # cancer_df = pd.read_excel('../genelist/TUSON_top200.xlsx', index_col=0)
+        # cancer_df = pd.read_excel('../genelist/TUSON_top300.xlsx', index_col=0)
+        # cancer_df = pd.read_excel('../genelist/TUSON_top400.xlsx', index_col=0)
+        # cancer_df = pd.read_excel('../genelist/TUSON_top500.xlsx', index_col=0)
+        train_df = label_label(train_df, cancer_df)
+
+        scaler = center_normalization(train_df.iloc[:, :-1])
+
+        train_df.iloc[:, :-1] = preprocessing_table(scaler, train_df.iloc[:, :-1])
+
+        from CancerROC import ROC_plot
+
+        for marker in markers:
+            cur_train_df = train_df[[x for x in train_df.columns if x.find(marker)!=-1]]
+
+            estimator = RandomForestClassifier(n_estimators=10)
+            model = OneVsRestClassifier(estimator)
+
+            ROC_plot(model, cur_train_df, train_df.iloc[:, -1], classes=[0, 1, 2], fname=marker+'_ROC.pdf')
 
 
 
