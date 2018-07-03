@@ -7,6 +7,12 @@ from scipy import stats
 from sklearn import preprocessing
 from sklearn.preprocessing import label_binarize
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import MinMaxScaler
+
+eps = np.finfo(float).eps
+
+def sigmoid(x):
+    return (1 / (1 + np.exp(-x)))
 
 def quantileNormalize(df_input):
     df = df_input.copy()
@@ -74,7 +80,7 @@ if __name__ == "__main__":
         # for r in range(0, 10000, 100):
         for r in [100]:
             train_df = pd.read_csv('../context/Cancer_Learn_CIG_train.csv', index_col=0)
-            columns = [c for c in train_df.columns if c.find('27me3')==-1 and c.find('cell_type')==-1]
+            columns = [c for c in train_df.columns if (c.find('27ac')!=-1 or c.find('4me1')!=-1 or c.find('4me3')!=-1) and c.find('cell_type')==-1 and (c.find('total_width_genebody')!=-1 or c.find('height_genebody')!=-1)]
             train_df = train_df[columns]
 
             train_df = label_label(train_df, CIG_df)
@@ -122,7 +128,10 @@ if __name__ == "__main__":
 
                 # print df[df['p_value'] < 0.01].shape[0]
                 df = df.sort_values(by=['distance'], ascending=False)
-                df['rank'] = range(1, df.shape[0] + 1)
+                # df['rank'] = np.arange(0, 1, 1./df.shape[0])
+                # df['rank'] = 1./(1+(0.05/(df['rank']+eps)))**4
+                # df['rank'] = 1-MinMaxScaler().fit(df['rank'].values.reshape([-1,1])).transform(df['rank'].values.reshape([-1,1]))
+
                 # del df['CIG_prob']
                 # del df['non-CIG_prob']
                 df = df.set_index(['gene_id'])
@@ -131,9 +140,12 @@ if __name__ == "__main__":
 
 
     """
-    MB231
+    add environment context to do the prediction
     """
-    if True:
+    if False:
+        # known_gtf = pd.read_csv('../ref_data/hg19.ucscgenes.knowngene.xls', sep='\t')
+        known_gtf = pd.read_csv('../ref_data/hg19.GREATgene2UCSCknownGenes.table.xls', sep='\t')
+
         cancer_df = pd.read_excel('../genelist/TUSON_cancer_genes_curated.xlsx', index_col=0)
 
         pan_og_candidates = cancer_df[cancer_df['type']=='OG'].index
@@ -153,6 +165,9 @@ if __name__ == "__main__":
                        'MB361', 'UACC812', 'SKBR3',
                        'HCC1954', 'MB468', 'HCC1937', 'MB436']
 
+        # exp_columns = ['HMEL_BREAST', 'MCF7_BREAST', 'MDAMB231_BREAST']
+        # celltype_columns = ['HMEL', 'MCF7', 'MB231']
+
         result_df = pd.DataFrame(index=celltype_columns, columns=['p_og', 'p_tsg', 'pan_p_og', 'pan_p_tsg'])
         result_df.index.name = 'cell_type'
 
@@ -171,14 +186,32 @@ if __name__ == "__main__":
             cur_context_df = cur_context_df[cur_context_df.index.isin(common_index)]
             exp_df = exp_df[exp_df.index.isin(common_index)]
 
-            # factor1 = (predict_df['OG_prob'])/(predict_df['OG_prob']+predict_df['TSG_prob']) - predict_df['Control_prob']
-            # factor2 = (predict_df['TSG_prob'])/(predict_df['OG_prob']+predict_df['TSG_prob']) - predict_df['Control_prob']
-            #
-            # predict_df['MB231_OG_prob'] = (MB231_df['distance']+abs(MB231_df['distance'].min())) * factor1
-            # predict_df['MB231_TSG_prob'] = (-(MB231_df['distance']-MB231_df['distance'].median()).abs()+MB231_df['distance'].max()-(MB231_df['distance'].min())/2) * (factor2) #- predict_df['MB231_OG_prob']
+            cur_distance = cur_context_df['distance'].values.reshape(-1, 1)
+            cur_context_df['og_distance'] = MinMaxScaler().fit(cur_distance).transform(cur_distance)
+            cur_context_df['tsg_distance'] = MinMaxScaler().fit(cur_distance*-1).transform(cur_distance*-1)
 
-            cur_predict_df[cur_celltype_column+'_OG_prob'] = cur_predict_df['OG_prob'] + cur_context_df['CIG_prob']
-            cur_predict_df[cur_celltype_column+'_TSG_prob'] = cur_predict_df['TSG_prob']+cur_predict_df['OG_prob'] - cur_context_df['CIG_prob']
+            # cur_predict_df[cur_celltype_column + '_OG_prob'] = cur_predict_df['OG_prob'] + cur_context_df['distance']
+            cur_predict_df[cur_celltype_column + '_OG_prob'] = cur_predict_df['OG_prob'] * cur_context_df['og_distance'] + cur_context_df['og_distance']
+            cur_predict_df[cur_celltype_column + '_TSG_prob'] = (cur_predict_df['TSG_prob']+cur_predict_df['OG_prob']) * cur_context_df['tsg_distance'] - cur_predict_df['OG_prob']**10 + cur_context_df['tsg_distance']
+
+            cur_predict_df = cur_predict_df.sort_values(by=[cur_celltype_column + '_OG_prob'], ascending=False)
+            cur_predict_df[cur_celltype_column + '_OG_prob'] = np.arange(0, 1, 1./cur_predict_df.shape[0])
+            cur_predict_df[cur_celltype_column + '_OG_prob'] = 1. / (1 + (0.05 / (cur_predict_df[cur_celltype_column + '_OG_prob'] + eps))) ** 4
+            cur_predict_df[cur_celltype_column + '_OG_prob'] = 1 - MinMaxScaler().fit(cur_predict_df[cur_celltype_column + '_OG_prob'].values.reshape([-1, 1])).transform(cur_predict_df[cur_celltype_column + '_OG_prob'].values.reshape([-1, 1]))
+
+            cur_predict_df = cur_predict_df.sort_values(by=[cur_celltype_column + '_TSG_prob'], ascending=False)
+            cur_predict_df[cur_celltype_column + '_TSG_prob'] = np.arange(0, 1, 1. / cur_predict_df.shape[0])
+            cur_predict_df[cur_celltype_column + '_TSG_prob'] = 1. / (1 + (
+            0.05 / (cur_predict_df[cur_celltype_column + '_TSG_prob'] + eps))) ** 4
+            cur_predict_df[cur_celltype_column + '_TSG_prob'] = 1 - MinMaxScaler().fit(
+                cur_predict_df[cur_celltype_column + '_TSG_prob'].values.reshape([-1, 1])).transform(
+                cur_predict_df[cur_celltype_column + '_TSG_prob'].values.reshape([-1, 1]))
+
+
+            # df['rank'] = np.arange(0, 1, 1./df.shape[0])
+            # df['rank'] = 1./(1+(0.05/(df['rank']+eps)))**4
+            # df['rank'] = 1-MinMaxScaler().fit(df['rank'].values.reshape([-1,1])).transform(df['rank'].values.reshape([-1,1]))
+
 
             cur_predict_df['context_score'] = cur_context_df['distance']
 
@@ -188,13 +221,13 @@ if __name__ == "__main__":
             # pan_og_candidates = list(cur_predict_df.nlargest(500, 'OG_prob').index)
             # pan_tsg_candidates = list(cur_predict_df.nlargest(500, 'TSG_prob').index)
 
-            result_df.ix[cur_celltype_column, 'p_og'] = stats.mannwhitneyu(exp_df.ix[og_candidates, 'HMEL_BREAST'], exp_df.ix[og_candidates, cur_exp_column], alternative='less')[1]
-            result_df.ix[cur_celltype_column, 'pan_p_og'] = stats.mannwhitneyu(exp_df.ix[pan_og_candidates, 'HMEL_BREAST'], exp_df.ix[pan_og_candidates, cur_exp_column],
-                                    alternative='less')[1]
+            result_df.ix[cur_celltype_column, 'p_og'] = -np.log10(stats.mannwhitneyu(exp_df.ix[og_candidates, 'HMEL_BREAST'], exp_df.ix[og_candidates, cur_exp_column], alternative='less')[1])
+            result_df.ix[cur_celltype_column, 'pan_p_og'] = -np.log10(stats.mannwhitneyu(exp_df.ix[pan_og_candidates, 'HMEL_BREAST'], exp_df.ix[pan_og_candidates, cur_exp_column],
+                                    alternative='less')[1])
 
-            result_df.ix[cur_celltype_column, 'p_tsg'] = stats.mannwhitneyu(exp_df.ix[tsg_candidates, 'HMEL_BREAST'], exp_df.ix[tsg_candidates, cur_exp_column], alternative='greater')[1]
-            result_df.ix[cur_celltype_column, 'pan_p_tsg'] =  stats.mannwhitneyu(exp_df.ix[pan_tsg_candidates, 'HMEL_BREAST'], exp_df.ix[pan_tsg_candidates, cur_exp_column],
-                                    alternative='greater')[1]
+            result_df.ix[cur_celltype_column, 'p_tsg'] = -np.log10(stats.mannwhitneyu(exp_df.ix[tsg_candidates, 'HMEL_BREAST'], exp_df.ix[tsg_candidates, cur_exp_column], alternative='greater')[1])
+            result_df.ix[cur_celltype_column, 'pan_p_tsg'] =  -np.log10(stats.mannwhitneyu(exp_df.ix[pan_tsg_candidates, 'HMEL_BREAST'], exp_df.ix[pan_tsg_candidates, cur_exp_column],
+                                    alternative='greater')[1])
 
 
             # tsg_median = exp_df.ix[tsg_candidates, 'HMEL_BREAST'].median(), exp_df.ix[tsg_candidates, cur_exp_column].median()
@@ -214,6 +247,60 @@ if __name__ == "__main__":
             cur_predict_df.nlargest(500, cur_celltype_column+'_OG_prob').to_excel('../data/breast/'+cur_celltype_column+'_adjust_OG_prediction.xlsx')
 
             cur_predict_df.nlargest(500, cur_celltype_column+'_TSG_prob').to_excel('../data/breast/'+cur_celltype_column+'_adjust_TSG_prediction.xlsx')
+
+            og_df = known_gtf[known_gtf['hg19.kgXref.geneSymbol'].isin(og_candidates)]
+            og_df.to_csv(cur_celltype_column+'_OGs.txt', sep='\t', header=None, index=None)
+
+            tsg_df = known_gtf[known_gtf['hg19.kgXref.geneSymbol'].isin(tsg_candidates)]
+            tsg_df.to_csv(cur_celltype_column + '_TSGs.txt', sep='\t', header=None, index=None)
+
+            control_candidates = cur_predict_df[(~cur_predict_df.index.isin(og_candidates)) & (~cur_predict_df.index.isin(tsg_candidates)) & (~cur_predict_df.index.isin(pan_og_candidates)) & (~cur_predict_df.index.isin(pan_tsg_candidates))].sample(500, random_state=0).index
+
+            control_df = known_gtf[known_gtf['hg19.kgXref.geneSymbol'].isin(control_candidates)]
+            control_df.to_csv(cur_celltype_column + '_controls.txt', sep='\t', header=None, index=None)
+
         result_df.to_csv('../data/breast/p_values.csv')
+
+
+    """
+    common oncogenes and tumor suppressors based on different types of tumor celltypes
+    """
+    if True:
+        celltypes =[['MCF7', 'ZR751'],
+                    ['MB361', 'UACC812'],
+                    ['SKBR3','AU565','HCC1954'],
+                    ['MB468','HCC1937'],
+                    ['MB231','MB436'],
+                    ['MB468', 'HCC1937', 'MB231', 'MB436']]
+        path = '../data/breast/'
+        common_dict = {}
+        for celltype in celltypes:
+            name = '_'.join(celltype)
+            common_dict[name] = {}
+            common_dict[name]['OG'] = set()
+            common_dict[name]['TSG'] = set()
+
+            for c in celltype:
+                cur_tsg_df = pd.read_excel(path+c+'_adjust_TSG_prediction.xlsx', index_col=0)
+                cur_og_df = pd.read_excel(path + c + '_adjust_OG_prediction.xlsx', index_col=0)
+
+                if len(common_dict[name]['TSG'])==0:
+                    common_dict[name]['TSG'] = common_dict[name]['TSG'].union(cur_tsg_df.index)
+                    common_dict[name]['OG'] = common_dict[name]['OG'].union(cur_og_df.index)
+                else:
+                    common_dict[name]['TSG'] = common_dict[name]['TSG'].intersection(cur_tsg_df.index)
+                    common_dict[name]['OG'] = common_dict[name]['OG'].intersection(cur_og_df.index)
+            common_dict[name]['TSG'] = list(common_dict[name]['TSG'])
+            common_dict[name]['OG'] = list(common_dict[name]['OG'])
+
+        for celltype in common_dict.keys():
+            cur_shape = max(len(common_dict[celltype]['OG']), len(common_dict[celltype]['TSG']))
+            cur_df = pd.DataFrame(index=range(cur_shape))
+            cur_df['OG'] = common_dict[celltype]['OG'] + ['']*(cur_shape - len(common_dict[celltype]['OG']))
+            cur_df['TSG'] = common_dict[celltype]['TSG'] + [''] * (cur_shape - len(common_dict[celltype]['TSG']))
+            cur_df.to_excel(path+celltype+'_cancer_genes.xlsx', index=None)
+
+
+
 
 
